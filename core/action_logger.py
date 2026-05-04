@@ -8,10 +8,21 @@ from datetime import datetime
 
 # Adjust path to import config
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Initialize logger
+try:
+    from core.logger import logger
+except ImportError:
+    class SimpleLogger:
+        def error(self, msg): sys.stderr.write(f"ERROR: {msg}\n")
+        def warning(self, msg): sys.stderr.write(f"WARNING: {msg}\n")
+        def info(self, msg): pass
+    logger = SimpleLogger()
+
 try:
     import config
 except ImportError as e:
-    print(f"Error importing config in core/action_logger.py: {e}")
+    logger.error(f"Error importing config in core/action_logger.py: {e}")
     # Basic fallback for direct script execution if needed
 
     class MockConfig:
@@ -29,7 +40,7 @@ class ActionLogger:
             conn = sqlite3.connect(self.db_path)
             return conn
         except sqlite3.Error as e:
-            print(
+            logger.error(
                 f"ActionLogger: Database connection error to {self.db_path}: {e}")
             return None
 
@@ -49,7 +60,7 @@ class ActionLogger:
         """
         conn = self._get_db_connection()
         if not conn:
-            print(
+            logger.error(
                 f"ActionLogger: Cannot log action, no DB connection. Action: {action_type}, User: {username}")
             return
 
@@ -64,10 +75,10 @@ class ActionLogger:
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (current_timestamp, user_id, username, action_type, details_json, status, ip_address))
             conn.commit()
-            print(
+            logger.info(
                 f"Action Logged: Type='{action_type}', User='{username or 'System'}', Status='{status}'")
         except sqlite3.Error as e:
-            print(
+            logger.error(
                 f"ActionLogger: Database error logging action '{action_type}': {e}")
         finally:
             if conn:
@@ -98,7 +109,7 @@ class ActionLogger:
                 actions.append(action_dict)
             return actions
         except sqlite3.Error as e:
-            print(f"ActionLogger: Database error fetching recent actions: {e}")
+            logger.error(f"ActionLogger: Database error fetching recent actions: {e}")
             return []
         finally:
             if conn:
@@ -110,7 +121,7 @@ action_logger = ActionLogger()
 
 if __name__ == '__main__':
     # Example Usage (requires database to be initialized with the new table)
-    print("Testing ActionLogger...")
+    logger.info("Testing ActionLogger...")
     # You would need to run db_setup.py first if the DB/table doesn't exist
     # from ..database.db_setup import initialize_database
     # initialize_database()
@@ -122,9 +133,9 @@ if __name__ == '__main__':
     action_logger.log_action("SYSTEM_STARTUP", details={"version": "0.1.0"})
 
     recent = action_logger.get_recent_actions(5)
-    print("\nRecent Actions:")
+    logger.info("Recent Actions:")
     for item in recent:
         ts = datetime.fromtimestamp(
             item['activity_timestamp']).strftime('%Y-%m-%d %H:%M:%S')
-        print(
+        logger.info(
             f"- {ts} | User: {item.get('username', 'N/A')} | Action: {item['action_type']} | Status: {item['status']} | Details: {item['details']}")

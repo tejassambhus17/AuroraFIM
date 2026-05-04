@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QAbstractItemView, QFrame,
     QStyle, QMessageBox, QApplication # Added QApplication for processEvents
 )
-from PySide6.QtCore import Qt, Slot, QTimer, QSize, QThreadPool
+from PySide6.QtCore import Qt, Slot, QTimer, QSize, QThreadPool, Signal
 from PySide6.QtGui import QColor, QIcon, QFont, QPalette
 from datetime import datetime
 import os
@@ -14,13 +14,23 @@ import json
 # Adjust import path for core components
 sys.path.append(os.path.abspath(os.path.join(
     os.path.dirname(__file__), '..', '..')))
+
+# Initialize logger for this widget
+try:
+    from core.logger import logger
+except ImportError:
+    class SimpleLogger:
+        def error(self, msg): sys.stderr.write(f"ERROR: {msg}\n")
+    logger = SimpleLogger()
+
 try:
     import config
     from core.fim import FIMEngine
     from core.user_profiler import user_profiler
     from gui.widgets.worker import Worker # NEW: Import Worker
+    from gui.widgets.behavior_chart_widget import BehaviorVisualizationChart  # NEW: Import behavior chart
 except ImportError as e:
-    print(f"ERROR: Error importing modules in uba_dashboard_widget.py: {e}")
+    logger.error(f"Error importing modules in uba_dashboard_widget.py: {e}")
     # Fallback mocks
     config = type('MockConfig', (), {
         'APP_NAME': 'UBA Dashboard',
@@ -35,7 +45,7 @@ except ImportError as e:
 
 
 class UbaDashboardWidget(QWidget):
-    def __init__(self, fim_engine: FIMEngine, parent=None):
+    def __init__(self, fim_engine: object, parent=None):
         super().__init__(parent)
         self.fim_engine = fim_engine
         self.current_theme = config.CURRENT_UI_MODE
@@ -48,6 +58,7 @@ class UbaDashboardWidget(QWidget):
 
         # Title
         title_label = QLabel("User Behavior Analytics (UBA) Dashboard")
+        title_label.setObjectName("UbaDashboardTitle")
         font = title_label.font()
         font.setPointSize(16)
         font.setBold(True)
@@ -84,15 +95,9 @@ class UbaDashboardWidget(QWidget):
         risk_layout.addWidget(self.risk_table)
         top_h_layout.addWidget(risk_frame, 1)
 
-        # Placeholder for future visualizations (or other summary frames)
-        viz_frame = QFrame()
-        viz_layout = QVBoxLayout(viz_frame)
-        viz_title = QLabel("Behavior Visualization (Future Chart Area)")
-        viz_title.setFont(QFont('Arial', 12, QFont.Bold))
-        viz_layout.addWidget(viz_title)
-        viz_layout.addWidget(QLabel("Charts for login times, file mods per day, etc., will be displayed here."))
-        top_h_layout.addWidget(viz_frame, 1)
-
+        # Behavior Visualization Chart
+        self.behavior_chart = BehaviorVisualizationChart()
+        top_h_layout.addWidget(self.behavior_chart, 1)
 
         main_layout.addLayout(top_h_layout)
 
@@ -100,11 +105,13 @@ class UbaDashboardWidget(QWidget):
         baseline_controls_layout = QHBoxLayout() # NEW Layout for title + button
 
         self.baseline_title = QLabel("User Behavior Baseline (30-Day Average)")
+        self.baseline_title.setObjectName("UbaBaselineTitle")
         self.baseline_title.setFont(QFont('Arial', 12, QFont.Bold))
         baseline_controls_layout.addWidget(self.baseline_title)
         
         self.recalculate_button = QPushButton("Manual Recalculate Profiles") # NEW Button
-        self.recalculate_button.setIcon(self.style().standardIcon(QStyle.SP_TrashIcon))
+        self.recalculate_button.setObjectName("UbaRecalculateButton")
+        self.recalculate_button.setIcon(self.style().standardIcon(QStyle.SP_BrowserReload))
         self.recalculate_button.clicked.connect(self.on_recalculate_profiles)
         baseline_controls_layout.addWidget(self.recalculate_button, alignment=Qt.AlignRight)
 
@@ -130,6 +137,7 @@ class UbaDashboardWidget(QWidget):
         
         # Periodic refresh for visualization/dashboard data
         self.refresh_button = QPushButton("Refresh UBA Data Tables")
+        self.refresh_button.setObjectName("UbaRefreshButton")
         self.refresh_button.clicked.connect(self.refresh_uba_data)
         main_layout.addWidget(self.refresh_button, alignment=Qt.AlignRight)
 
@@ -186,13 +194,30 @@ class UbaDashboardWidget(QWidget):
     def refresh_uba_data(self):
         """Loads both the latest risk report and all user profiles."""
         self.load_risk_report()
-        self.load_user_profiles()
+        profiles = self.load_user_profiles()
+        # Update behavior chart with user data
+        if hasattr(self, 'behavior_chart'):
+            self.behavior_chart.populate_users(profiles)
+            self.behavior_chart.update_charts()
         
     @Slot()
     def load_risk_report(self):
         """Populates the Risk Report table from the last calculated report."""
         # Use the result stored in the user_profiler instance
         report_data = user_profiler.get_latest_risk_report()
+        
+        # If no suspicious activity, show all user profiles with their risk status
+        if not report_data:
+            profiles = user_profiler.get_all_user_profiles()
+            report_data = []
+            for profile in profiles:
+                report_data.append({
+                    'username': profile.get('username', 'N/A'),
+                    'risk_score': 0,
+                    'classification': 'Normal',
+                    'report_time': profile.get('profile_date', 'N/A')
+                })
+        
         self.risk_table.setSortingEnabled(False)
         self.risk_table.setRowCount(0)
         
@@ -251,11 +276,16 @@ class UbaDashboardWidget(QWidget):
 
         self.baseline_table.setSortingEnabled(True)
         self.baseline_table.resizeColumnsToContents()
+        
+        return profiles
 
     def update_styles_for_theme(self, theme_name: str):
         self.current_theme = theme_name
         # Trigger re-coloring for tables since colors are hardcoded based on theme palette
         self.load_risk_report()
+        # Update behavior chart theme
+        if hasattr(self, 'behavior_chart'):
+            self.behavior_chart.update_styles_for_theme(theme_name)
         # Ensure title colors match the theme (as QSS cannot target non-text content like QColor foregrounds)
         current_palette = config.DARK_THEME_PALETTE if theme_name == "dark" else config.LIGHT_THEME_PALETTE
         text_color = current_palette.get("text")

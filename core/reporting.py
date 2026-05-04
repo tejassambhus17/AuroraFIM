@@ -10,10 +10,21 @@ from reportlab.lib.units import inch
 
 # Adjust path to import config
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Initialize logger
+try:
+    from core.logger import logger
+except ImportError:
+    class SimpleLogger:
+        def info(self, msg): print(f"INFO: {msg}")
+        def error(self, msg): print(f"ERROR: {msg}")
+        def warning(self, msg): print(f"WARNING: {msg}")
+    logger = SimpleLogger()
+
 try:
     import config
 except ImportError as e:
-    print(f"Error importing config in core/reporting.py: {e}")
+    logger.error(f"Error importing config in core/reporting.py: {e}")
 
     class MockConfig:
         APP_NAME = "AuroraFIM Pro (Mock)"
@@ -26,7 +37,7 @@ if not os.path.exists(REPORTS_DIR):
     try:
         os.makedirs(REPORTS_DIR, exist_ok=True)
     except OSError as e:
-        print(f"Error creating reports directory {REPORTS_DIR}: {e}")
+        logger.error(f"Error creating reports directory {REPORTS_DIR}: {e}")
         REPORTS_DIR = "."
 
 STYLES = getSampleStyleSheet()
@@ -61,8 +72,8 @@ class ReportGenerator:
             try:
                 os.makedirs(abs_reports_dir, exist_ok=True)
             except OSError:
-                print(
-                    f"Warning: Could not ensure reports directory {abs_reports_dir}. Using current.")
+                logger.warning(
+                    f"Could not ensure reports directory {abs_reports_dir}. Using current.")
                 abs_reports_dir = "."
         self.filename = os.path.join(
             abs_reports_dir, f"AuroraFIM_Audit_Report_{timestamp_str}.pdf")
@@ -87,10 +98,10 @@ class ReportGenerator:
             self._add_discrepancies_table()
             doc.build(self.story, onFirstPage=self._header_footer,
                       onLaterPages=self._header_footer)
-            print(f"Report generated successfully: {self.filename}")
+            logger.info(f"Report generated successfully: {self.filename}")
             return self.filename
         except Exception as e:
-            print(f"Error generating PDF report: {e}")
+            logger.error(f"Error generating PDF report: {e}")
             import traceback
             traceback.print_exc()
             return None
@@ -202,7 +213,8 @@ class ReportGenerator:
 
 
 if __name__ == '__main__':
-    print(f"Report output directory (from test block): {REPORTS_DIR}")
+    logger.info(f"Report output directory (from test block): {REPORTS_DIR}")
+    import time
     mock_discrepancies = [
         {"event_timestamp": time.time() - 3600, "file_path": "/var/log/secure.log", "event_type": "MODIFIED_HASH",
          "baseline_hash": "abc123def456789", "actual_hash": "def123abc456789"},
@@ -220,6 +232,6 @@ if __name__ == '__main__':
         report_data={'discrepancies': mock_discrepancies}, audit_summary=mock_summary)
     pdf_file = report_gen.build_pdf()
     if pdf_file:
-        print(f"Mock report generated: {pdf_file}")
+        logger.info(f"Mock report generated: {pdf_file}")
     else:
-        print("Mock report generation failed.")
+        logger.error("Mock report generation failed.")

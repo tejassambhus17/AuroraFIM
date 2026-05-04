@@ -17,6 +17,17 @@ import json
 # Ensure the package root is in sys.path
 sys.path.append(os.path.abspath(os.path.join(
     os.path.dirname(__file__), '..', '..')))
+
+# Initialize logger for this widget
+try:
+    from core.logger import logger
+except ImportError:
+    class SimpleLogger:
+        def error(self, msg): sys.stderr.write(f"ERROR: {msg}\n")
+        def warning(self, msg): sys.stderr.write(f"WARNING: {msg}\n")
+        def info(self, msg): pass
+    logger = SimpleLogger()
+
 try:
     import config
     from core.fim import FIMEngine
@@ -26,7 +37,7 @@ try:
     from core.simulator import Simulator
     from core.action_logger import action_logger
 except ImportError as e:
-    print(f"ERROR: Error importing modules in dashboard_widget.py: {e}")
+    logger.error(f"Error importing modules in dashboard_widget.py: {e}")
     # Fallback mocks
     config = type('MockConfig', (), {
         'MONITORED_DIRECTORIES': [],
@@ -84,7 +95,7 @@ class DashboardWidget(QWidget):
     monitorSingleFileRequested = Signal()
 
     def __init__(self, current_user: str, current_role: str,
-                 fim_engine: FIMEngine, parent=None):
+                 fim_engine: object, parent=None):
         super().__init__(parent)
         self.current_user, self.current_role = current_user, current_role
         
@@ -93,19 +104,18 @@ class DashboardWidget(QWidget):
         if fim_engine and fim_engine.auth_handler and Simulator:
             try:
                 self.simulator = Simulator(fim_engine, fim_engine.auth_handler)
-                print("INFO: Simulator initialized.")
+                logger.info("Simulator initialized.")
             except Exception as e:
-                print(f"WARNING: Simulator failed to initialize: {e}")
+                logger.warning(f"Simulator failed to initialize: {e}")
         elif self.current_role == "admin":
-             print("WARNING: Simulator not initialized. Missing dependencies or mock.")
+             logger.warning("Simulator not initialized. Missing dependencies or mock.")
 
         if FIMEngine is None or Worker is None:
             critical_error = "DashboardWidget cannot operate due to missing critical components (FIMEngine or Worker)."
-            print(f"CRITICAL ERROR: {critical_error}")
+            logger.error(critical_error)
             raise RuntimeError(critical_error)
         if ReportGenerator is None:
-            print(
-                "Warning: ReportGenerator module not loaded. Reporting will be disabled.")
+            logger.warning("ReportGenerator module not loaded. Reporting will be disabled.")
 
         self.fim_engine = fim_engine
         self.threadpool = QThreadPool.globalInstance()
@@ -169,6 +179,10 @@ class DashboardWidget(QWidget):
         at.setFont(atf)
         al.addWidget(at)
 
+        actions_hint = QLabel("Security operations and administration controls")
+        actions_hint.setObjectName("SectionSubtitle")
+        al.addWidget(actions_hint)
+
         icon_size = QSize(18, 18)
         verify_icon = self.style().standardIcon(QStyle.SP_DialogApplyButton)
         baseline_icon = self.style().standardIcon(QStyle.SP_DriveHDIcon)
@@ -177,36 +191,44 @@ class DashboardWidget(QWidget):
         add_file_icon = self.style().standardIcon(QStyle.SP_FileLinkIcon)
         
         self.verify_baseline_button = QPushButton(" Verify Integrity")
+        self.verify_baseline_button.setObjectName("PrimaryActionButton")
         self.verify_baseline_button.setIcon(verify_icon)
         self.verify_baseline_button.setIconSize(icon_size)
         self.set_new_baseline_button = QPushButton(
             " Set New Baseline (All Monitored)")
+        self.set_new_baseline_button.setObjectName("SecondaryActionButton")
         self.set_new_baseline_button.setIcon(baseline_icon)
         self.set_new_baseline_button.setIconSize(icon_size)
         self.monitor_single_file_button = QPushButton(
             " Monitor & Baseline Single File")
+        self.monitor_single_file_button.setObjectName("SecondaryActionButton")
         self.monitor_single_file_button.setIcon(add_file_icon)
         self.monitor_single_file_button.setIconSize(icon_size)
         self.generate_report_button = QPushButton(" Generate Report")
+        self.generate_report_button.setObjectName("SecondaryActionButton")
         self.generate_report_button.setIcon(report_icon)
         self.generate_report_button.setIconSize(icon_size)
         
         # Simulator Button
         self.simulation_button = QPushButton(" UBA: Run Anomaly Simulation")
+        self.simulation_button.setObjectName("DangerActionButton")
         self.simulation_button.setIcon(self.style().standardIcon(QStyle.SP_MessageBoxCritical))
         self.simulation_button.setIconSize(icon_size)
         self.simulation_button.clicked.connect(self.on_run_simulation_clicked)
         
         # Admin: Configure Paths Button
         self.configure_paths_button = QPushButton(" Admin: Configure Paths")
+        self.configure_paths_button.setObjectName("SecondaryActionButton")
         self.configure_paths_button.setIcon(configure_icon)
         self.configure_paths_button.setIconSize(icon_size)
         self.configure_paths_button.clicked.connect(
             self.on_configure_paths_clicked)
         
-        # Conditional Visibility for Simulation Button
+        # Conditional Visibility for Admin-Only Buttons
         if self.current_role != "admin":
             self.simulation_button.setVisible(False)
+            self.set_new_baseline_button.setVisible(False)
+            self.configure_paths_button.setVisible(False)
 
 
         quick_action_buttons = [self.verify_baseline_button, self.set_new_baseline_button,
@@ -221,19 +243,26 @@ class DashboardWidget(QWidget):
         top_section_layout.addWidget(self.quick_actions_frame, 2)
         main_layout.addLayout(top_section_layout)
 
+        events_frame = QFrame()
+        events_frame.setObjectName("RecentEventsFrame")
+        events_layout = QVBoxLayout(events_frame)
+        events_layout.setContentsMargins(12, 12, 12, 12)
+        events_layout.setSpacing(10)
+
         ehl = QHBoxLayout()
         self.recent_events_title_label = QLabel("Recent Integrity Events")
         self.recent_events_title_label.setObjectName("RecentEventsTitleLabel")
         etf = self.recent_events_title_label.font()
         etf.setPointSize(12)
-        self.recent_events_title_label.setFont(etf) # FIX: Set font on QLabel object
+        self.recent_events_title_label.setFont(etf) # FIX: Was etf.setFont(etf)
         ehl.addWidget(self.recent_events_title_label)
         ehl.addStretch()
         self.refresh_events_button = QPushButton("Refresh Events")
+        self.refresh_events_button.setObjectName("SecondaryActionButton")
         self.refresh_events_button.clicked.connect(
             self.refresh_events_table_from_db)
         ehl.addWidget(self.refresh_events_button)
-        main_layout.addLayout(ehl)
+        events_layout.addLayout(ehl)
 
         self.recent_events_table = QTableWidget()
         self.recent_events_table.setColumnCount(3)
@@ -252,12 +281,15 @@ class DashboardWidget(QWidget):
         ).setSectionResizeMode(1, QHeaderView.Stretch)
         self.recent_events_table.horizontalHeader().setSectionResizeMode(2,
                                                                          QHeaderView.ResizeToContents)
-        main_layout.addWidget(self.recent_events_table)
+        events_layout.addWidget(self.recent_events_table)
+        main_layout.addWidget(events_frame)
 
         self.verify_baseline_button.clicked.connect(
             self.on_verify_integrity_clicked)
         self.set_new_baseline_button.clicked.connect(
             self.on_set_new_baseline_clicked)
+        self.monitor_single_file_button.clicked.connect(
+            self.on_monitor_single_file_clicked)
         self.generate_report_button.clicked.connect(
             self.on_generate_report_clicked)
         self.progress_dialog = None
@@ -310,15 +342,15 @@ class DashboardWidget(QWidget):
     def refresh_events_table_from_db(self):
         if not self.fim_engine:
             return
-        print("DEBUG Dashboard: Refreshing events table from DB...")
+        logger.debug("Dashboard: Refreshing events table from DB...")
         events_data = self.fim_engine.get_recent_events_from_db()
-        print(
-            f"DEBUG Dashboard: Fetched {len(events_data)} events from DB for refresh.")
+        logger.debug(
+            f"Dashboard: Fetched {len(events_data)} events from DB for refresh.")
         self._populate_events_table_ui(events_data)
 
     def _populate_events_table_ui(self, events_data: list):
-        print(
-            f"DEBUG Dashboard: _populate_events_table_ui called with {len(events_data)} events.")
+        logger.debug(
+            f"Dashboard: _populate_events_table_ui called with {len(events_data)} events.")
         self.recent_events_table.setSortingEnabled(False)
         self.recent_events_table.setRowCount(0)
         for i, ev in enumerate(events_data):
@@ -334,21 +366,21 @@ class DashboardWidget(QWidget):
                 i, 2, QTableWidgetItem(ev.get("event_type", "N/A")))
         self.recent_events_table.setSortingEnabled(True)
         self.recent_events_table.resizeColumnsToContents()
-        print(
-            f"DEBUG Dashboard: Table populated. Row count: {self.recent_events_table.rowCount()}")
+        logger.debug(
+            f"Dashboard: Table populated. Row count: {self.recent_events_table.rowCount()}")
 
     @Slot(str)
     def add_live_event_to_table(self, event_details_str: str):
         try:
             event_details = json.loads(event_details_str)
         except json.JSONDecodeError as e:
-            print(
-                f"ERROR Dashboard: Could not decode live event JSON: {e}. Data: {event_details_str}")
+            logger.error(
+                f"Dashboard: Could not decode live event JSON: {e}. Data: {event_details_str}")
             return
-        print(
-            f"DEBUG Dashboard: add_live_event_to_table called with: {event_details}")
-        print(
-            f"DEBUG Dashboard: Table row count BEFORE live event insert: {self.recent_events_table.rowCount()}")
+        logger.debug(
+            f"Dashboard: add_live_event_to_table called with: {event_details}")
+        logger.debug(
+            f"Dashboard: Table row count BEFORE live event insert: {self.recent_events_table.rowCount()}")
         self.recent_events_table.setSortingEnabled(False)
         self.recent_events_table.insertRow(0)
         ts_s = datetime.fromtimestamp(event_details.get(
@@ -358,14 +390,14 @@ class DashboardWidget(QWidget):
             0, 1, QTableWidgetItem(event_details.get("path", "N/A")))
         self.recent_events_table.setItem(0, 2, QTableWidgetItem(
             event_details.get("change_type", "N/A")))
-        max_rows = getattr(config, "MAX_EVENTS_IN_DASHBOARD", 100)
+        max_rows = 2
         if self.recent_events_table.rowCount() > max_rows:
             self.recent_events_table.removeRow(
                 self.recent_events_table.rowCount()-1)
         self.recent_events_table.setSortingEnabled(True)
         self.update_integrity_badge("unknown", "Live Event Occurred")
-        print(
-            f"DEBUG Dashboard: Table row count AFTER live event insert: {self.recent_events_table.rowCount()}")
+        logger.debug(
+            f"Dashboard: Table row count AFTER live event insert: {self.recent_events_table.rowCount()}")
         if hasattr(self, 'recent_events_title_label'):
             current_palette = config.DARK_THEME_PALETTE if config.CURRENT_UI_MODE == "dark" else config.LIGHT_THEME_PALETTE
             accent_color = current_palette.get("accent", "#007bff")
@@ -380,11 +412,11 @@ class DashboardWidget(QWidget):
         try:
             summary = json.loads(summary_str)
         except json.JSONDecodeError as e:
-            print(
-                f"ERROR Dashboard: Could not decode audit summary JSON: {e}. Data: {summary_str}")
+            logger.error(
+                f"Dashboard: Could not decode audit summary JSON: {e}. Data: {summary_str}")
             self.update_integrity_badge("error", "Audit Data Error")
             return
-        print(f"DEBUG Dashboard: Refreshing after audit. Summary: {summary}")
+        logger.debug(f"Dashboard: Refreshing after audit. Summary: {summary}")
         self.last_audit_summary_for_report = summary
         audit_time_str = datetime.fromisoformat(summary.get(
             "timestamp", datetime.now().isoformat())).strftime('%Y-%m-%d %H:%M:%S')
@@ -414,7 +446,7 @@ class DashboardWidget(QWidget):
 
     @Slot()
     def on_set_new_baseline_clicked(self):
-        print(
+        logger.debug(
             f"Dashboard: Set New Baseline (All Monitored) clicked by {self.current_user} ({self.current_role})")
         if self.current_role != "admin":
             QMessageBox.warning(
@@ -440,8 +472,8 @@ class DashboardWidget(QWidget):
     @Slot(object)
     def _handle_verification_result(self, result_tuple):
         discrepancies, summary = result_tuple
-        print(
-            f"DEBUG Dashboard: Verification result received. Discrepancies: {len(discrepancies)}")
+        logger.debug(
+            f"Dashboard: Verification result received. Discrepancies: {len(discrepancies)}")
         # Pass the summary dict as a JSON string to refresh_after_audit
         QMetaObject.invokeMethod(
             self, "refresh_after_audit", Qt.QueuedConnection, Q_ARG(str, json.dumps(summary)))
@@ -453,7 +485,7 @@ class DashboardWidget(QWidget):
         else:
             msg_text = "No discrepancies."
         QMessageBox.information(self, msg_title, msg_text)
-        print("Verify summary:", summary)
+        logger.debug(f"Verify summary: {summary}")
 
     @Slot(object)
     def _handle_rebaseline_result(self, result_tuple):
@@ -468,24 +500,24 @@ class DashboardWidget(QWidget):
             QMessageBox.critical(
                 self, "Baseline Error", f"Failed to create new baseline.\nDetails:{summary.get('message', 'Error')}")
             self.update_integrity_badge("error", audit_time)
-        print("Re-baseline summary:", summary)
+        logger.debug(f"Re-baseline summary: {summary}")
 
     @Slot(tuple)
     def _handle_worker_error(self, error_tuple):
         exctype, value, tb = error_tuple
-        print(f"Worker Error:{exctype},{value}\n{tb}")
+        logger.error(f"Worker Error: {exctype}, {value}\n{tb}")
         self._hide_progress_dialog()
         self.update_integrity_badge("error", "Op Failed")
         QMessageBox.critical(self, "Op Error", f"Error:\n{value}\nCheck logs.")
 
     @Slot()
     def on_configure_paths_clicked(self):
-        print("Dashboard: Configure Paths button clicked, emitting request.")
+        logger.debug("Dashboard: Configure Paths button clicked, emitting request.")
         self.configurePathsRequested.emit()
 
     @Slot()
     def on_monitor_single_file_clicked(self):
-        print("Dashboard: Monitor Single File button clicked, emitting request.")
+        logger.debug("Dashboard: Monitor Single File button clicked, emitting request.")
         self.monitorSingleFileRequested.emit()
         
     @Slot()
@@ -530,7 +562,7 @@ class DashboardWidget(QWidget):
             return
         if not self.fim_engine:
             return
-        print(f"Dashboard: Generate Report by {self.current_user}")
+        logger.debug(f"Dashboard: Generate Report by {self.current_user}")
         all_events = self.fim_engine.get_recent_events_from_db(limit=None)
         if not all_events and not self.last_audit_summary_for_report:
             QMessageBox.information(
@@ -569,13 +601,13 @@ class DashboardWidget(QWidget):
             else:
                 subprocess.call(["xdg-open", filepath])
         except Exception as e:
-            print(f"Error opening file {filepath}:{e}")
+            logger.error(f"Error opening file {filepath}: {e}")
             QMessageBox.warning(
                 self, "Open Error", f"Could not open report.\nFind it at:\n{filepath}")
 
     def update_styles_for_theme(self, theme_name: str):
-        print(
-            f"DashboardWidget: Theme changed to {theme_name}, styles could be updated here.")
+        logger.debug(
+            f"Dashboard: Theme changed to {theme_name}, styles could be updated here.")
         self.setStyleSheet(self.styleSheet())
         self.integrity_badge_frame.setStyleSheet(
             self.integrity_badge_frame.styleSheet())

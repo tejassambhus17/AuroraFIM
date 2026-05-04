@@ -13,12 +13,21 @@ import sys
 # Adjust import path for core.fim and config
 sys.path.append(os.path.abspath(os.path.join(
     os.path.dirname(__file__), '..', '..')))
+
+# Initialize logger for this widget
+try:
+    from core.logger import logger
+except ImportError:
+    class SimpleLogger:
+        def error(self, msg): sys.stderr.write(f"ERROR: {msg}\n")
+    logger = SimpleLogger()
+
 try:
     import config
     from core.fim import FIMEngine
     from core.hashing import FileHasher  # For potentially showing live hash
 except ImportError as e:
-    print(f"Error importing modules in baseline_inspector_widget.py: {e}")
+    logger.error(f"Error importing modules in baseline_inspector_widget.py: {e}")
     # Fallback for direct execution or if imports fail during app run
     config = type('MockConfig', (), {})()  # Basic mock
     FIMEngine = None
@@ -258,7 +267,7 @@ if __name__ == '__main__':
         inspector_widget.resize(900, 600)
         inspector_widget.show()
     else:
-        print("Skipping BaselineInspectorWidget test due to failed main imports.")
+        logger.warning("Skipping BaselineInspectorWidget test due to failed main imports.")
         # Show a simple message window if imports failed
         error_win = QWidget()
         QVBoxLayout(error_win).addWidget(

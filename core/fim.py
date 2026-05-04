@@ -12,11 +12,24 @@ from watchdog.events import FileSystemEventHandler, FileModifiedEvent, FileCreat
 from PySide6.QtCore import QObject, Signal
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Initialize logger
+try:
+    from core.logger import logger
+except ImportError:
+    class SimpleLogger:
+        def error(self, msg): sys.stderr.write(f"ERROR: {msg}\n")
+        def info(self, msg): pass
+        def debug(self, msg): pass
+        def warning(self, msg): sys.stderr.write(f"WARNING: {msg}\n")
+    logger = SimpleLogger()
+
 try:
     import config
     from core.hashing import FileHasher
+    from core.db_pool import get_db_pool, init_database_pool
 except ImportError as e:
-    print(f"Error importing modules in core/fim.py: {e}")
+    logger.error(f"Error importing modules in core/fim.py: {e}")
     # Fallback mocks (ensure all necessary config attributes are present)
 
     class MockConfig:
@@ -111,29 +124,64 @@ class FIMEngine(QObject):
             try:
                 os.makedirs(self.snapshot_dir, exist_ok=True)
             except OSError as e:
-                print(f"Error creating snapshot dir {self.snapshot_dir}: {e}")
+                logger.error(f"Error creating snapshot dir {self.snapshot_dir}: {e}")
         self.baseline_data = {}
         self.load_baseline()
         self.observer = None
         self.event_handler = FIMChangeEventHandler(self)
+        # Initialize database connection pool
+        try:
+            init_database_pool(
+                db_path=self.db_path,
+                pool_size=5
+            )
+            logger.info("Database connection pool initialized for FIM engine")
+        except Exception as e:
+            logger.warning(f"Could not initialize database pool: {e}. Will use fallback connections.")
+            self._use_pool = False
+        else:
+            self._use_pool = True
 
-    # Updated return type hint
-    def _get_db_connection(self) -> sqlite3.Connection | None:
-        """Establishes a connection to the SQLite database. Returns None on failure."""
+    # Removed direct SQLite connection method - use pool instead
+    def _get_db_connection_from_pool(self) -> sqlite3.Connection | None:
+        """Get a connection from the pool or fallback to direct connection."""
+        pool = get_db_pool()
+        if pool and self._use_pool:
+            try:
+                conn = pool.connections.get(timeout=2)
+                return conn
+            except Exception as e:
+                logger.warning(f"Could not get connection from pool: {e}")
+        # Fallback to direct connection
         try:
             conn = sqlite3.connect(self.db_path)
             conn.row_factory = sqlite3.Row
             return conn
         except sqlite3.Error as e:
-            print(
-                f"FIMEngine: Database connection error to {self.db_path}: {e}")
+            logger.error(f"Database connection error to {self.db_path}: {e}")
             return None
 
+    def _return_connection_to_pool(self, conn: sqlite3.Connection):
+        """Return connection to pool or close it."""
+        pool = get_db_pool()
+        if pool and self._use_pool:
+            try:
+                pool.connections.put(conn, timeout=2)
+                return
+            except Exception as e:
+                logger.warning(f"Could not return connection to pool: {e}")
+        # Fallback to closing
+        try:
+            if conn:
+                conn.close()
+        except:
+            pass
+
     def _log_event_to_db(self, ed: dict, user_id: int = None):
-        conn = self._get_db_connection()
+        conn = self._get_db_connection_from_pool()
         if not conn:  # Check if connection failed
-            print(
-                f"FIMEngine: Cannot log event to DB, no connection. Event: {ed}")
+            logger.error(
+                f"Cannot log event to DB, no connection. Event: {ed}")
             return
         
         # Determine user ID to log
@@ -148,16 +196,16 @@ class FIMEngine(QObject):
                                ed.get("actual_props"))if ed.get("actual_props")else None,
                                ed.get("details"), ed.get("source", "UNKNOWN"), event_user_id))
             conn.commit()
-            print(f"DB Event:{ed.get('change_type')} on {ed.get('path')}")
+            logger.debug(f"DB Event: {ed.get('change_type')} on {ed.get('path')}")
         except sqlite3.Error as e:
-            print(f"DB log error: {e}")
+            logger.error(f"DB log error: {e}")
         finally:
-            if conn:  # Ensure conn exists before closing
-                conn.close()
+            if conn:  # Ensure conn exists before returning
+                self._return_connection_to_pool(conn)
 
     def get_recent_events_from_db(self, limit: int = None) -> list[dict]:
         l = limit or getattr(config, "MAX_EVENTS_IN_DASHBOARD", 100)
-        conn = self._get_db_connection()
+        conn = self._get_db_connection_from_pool()
         if not conn:  # Check if connection failed
             return []  # Return empty list if no connection
 
@@ -171,14 +219,14 @@ class FIMEngine(QObject):
                 evs.append(dict(r))
             return evs
         except sqlite3.Error as e:
-            print(f"DB fetch error: {e}")
+            logger.error(f"DB fetch error: {e}")
             return []  # Return empty list on query error
         finally:
-            if conn:  # Ensure conn exists before closing
-                conn.close()
+            if conn:  # Ensure conn exists before returning
+                self._return_connection_to_pool(conn)
 
     def update_monitored_paths_and_restart_observer(self, new_paths: list[str]):
-        print("FIMEngine: Updating monitored paths and restarting observer...")
+        logger.info("FIMEngine: Updating monitored paths and restarting observer...")
         self.stop_monitoring()
         normalized_paths = []
         for path in new_paths:
@@ -188,41 +236,41 @@ class FIMEngine(QObject):
         self.monitored_paths = normalized_paths
         config.MONITORED_DIRECTORIES = list(self.monitored_paths)
         self.start_monitoring()
-        print(
+        logger.info(
             f"FIMEngine: Observer restarted with paths: {self.monitored_paths}")
 
     def start_monitoring(self):
         if not self.monitored_paths:
-            print("FIM: No paths to monitor.")
+            logger.warning("FIM: No paths to monitor.")
             return
         if self.observer and self.observer.is_alive():
-            print("FIM: Monitoring active.")
+            logger.debug("FIM: Monitoring active.")
             return
         self.observer = Observer()
         for path in self.monitored_paths:
             if os.path.exists(path):
                 self.observer.schedule(
                     self.event_handler, path, recursive=os.path.isdir(path))
-                print(
+                logger.info(
                     f"FIM: Monitoring {'dir' if os.path.isdir(path) else 'file'}: {path}")
             else:
-                print(f"FIM Warn: Path '{path}' not found for monitoring.")
+                logger.warning(f"FIM: Path '{path}' not found for monitoring.")
         if self.observer.emitters:
             self.observer.start()
-            print("FIM: Live monitoring started.")
+            logger.info("FIM: Live monitoring started.")
         else:
-            print("FIM: No valid paths scheduled. Observer not started.")
+            logger.warning("FIM: No valid paths scheduled. Observer not started.")
             self.observer = None
 
     def stop_monitoring(self):
         if self.observer and self.observer.is_alive():
             self.observer.stop()
             self.observer.join()
-            print("FIM: Live monitoring stopped.")
+            logger.info("FIM: Live monitoring stopped.")
         self.observer = None
 
     def handle_filesystem_change(self, et: str, sp: str, dp: str = None):
-        print(f"FIM Processing Live:{et} on {sp}"+(f" -> {dp}"if dp else ""))
+        logger.debug(f"FIM Processing Live: {et} on {sp}" + (f" -> {dp}" if dp else ""))
         # user_id is implicit via self.current_user_id, used as fallback in _log_event_to_db
         cd = {"path": sp, "change_type": f"LIVE_{et.upper()}",
               "timestamp": time.time(), "source": "LIVE"}
@@ -267,21 +315,21 @@ class FIMEngine(QObject):
             with open(self.baseline_file, 'r')as f:
                 bc = f.read()
             if not os.path.exists(self.signature_file):
-                print("Sig miss")
+                logger.warning("Baseline signature file missing")
                 self.baseline_data = {}
                 return False
             with open(self.signature_file, 'r')as f_s:
                 sig = f_s.read().strip()
             if self._verify_signature(bc.encode('utf-8'), sig):
                 self.baseline_data = json.loads(bc)
-                print("Baseline loaded/verified")
+                logger.info("Baseline loaded and verified")
                 return True
             else:
-                print("Baseline sig FAILED!")
+                logger.error("Baseline signature verification FAILED!")
                 self.baseline_data = {}
                 return False
         except Exception as e:
-            print(f"Err load baseline:{e}")
+            logger.error(f"Error loading baseline: {e}")
             self.baseline_data = {}
             return False
 
@@ -293,10 +341,10 @@ class FIMEngine(QObject):
                 f.write(bc)
             with open(self.signature_file, 'w')as f_s:
                 f_s.write(sig)
-            print("Baseline saved/signed")
+            logger.info("Baseline saved and signed")
             return True
         except Exception as e:
-            print(f"Err save baseline:{e}")
+            logger.error(f"Error saving baseline: {e}")
             return False
 
     def _scan_file_properties(self, fp: str) -> dict | None:
@@ -307,14 +355,14 @@ class FIMEngine(QObject):
             si = os.stat(fp)
             return {"hash": h, "size": si.st_size, "mtime": si.st_mtime, "mode": si.st_mode, "last_scanned": time.time()}
         except Exception as e:
-            print(f"Err scan props {fp}:{e}")
+            logger.error(f"Error scanning file properties for {fp}: {e}")
             return None
 
     def add_and_baseline_single_file(self, file_path: str) -> tuple[bool, str]:
         abs_file_path = os.path.abspath(file_path)
         if not os.path.exists(abs_file_path) or not os.path.isfile(abs_file_path):
             return False, f"File not found or is not a regular file: {abs_file_path}"
-        print(f"FIMEngine: Adding and baselining single file: {abs_file_path}")
+        logger.info(f"Adding and baselining single file: {abs_file_path}")
         properties = self._scan_file_properties(abs_file_path)
         if not properties:
             return False, f"Could not scan properties for file: {abs_file_path}"
@@ -331,7 +379,7 @@ class FIMEngine(QObject):
         return True, f"Successfully added and baselined file: {abs_file_path}"
 
     def create_new_baseline(self, paths_to_monitor: list[str] = None) -> tuple[bool, dict]:
-        print("Creating new baseline (all monitored items)...")
+        logger.info("Creating new baseline for all monitored items")
         nb = {}
         fs = 0
         se = 0
@@ -364,12 +412,11 @@ class FIMEngine(QObject):
         s = self.save_baseline()
         smry = {"message": "Baseline created."if s else "Save fail.",
                 "files_scanned": fs, "scan_errors": se, "save_successful": s}
-        print(smry)
+        logger.info(f"Baseline creation summary: {smry}")
         return s, smry
 
     def verify_integrity(self, is_scheduled_audit: bool = False) -> tuple[list[dict], dict]:
-        print(
-            f"Verifying integrity (scheduled: {is_scheduled_audit}, scanning new files: {is_scheduled_audit})...")
+        logger.info(f"Starting integrity verification (scheduled audit: {is_scheduled_audit})")
         if not self.baseline_data:
             return [], {"message": "No baseline.", "checked": 0, "mismatches": 0, "errors": 0, "new_files": 0, "removed_files": 0}
         df = []
@@ -409,7 +456,7 @@ class FIMEngine(QObject):
                 df.append(ed)
 
         if is_scheduled_audit:
-            print("Scheduled audit: Scanning for new files in monitored directories...")
+            logger.debug("Scheduled audit: scanning for new files in monitored directories")
             for rp in self.monitored_paths:
                 if not os.path.exists(rp):
                     continue
@@ -431,12 +478,11 @@ class FIMEngine(QObject):
                         nfd += 1
                         cfs[afp] = True
         else:
-            print(
-                "Manual verification: Skipping scan for new files in monitored directories.")
+            logger.debug("Manual verification: skipping scan for new files in monitored directories")
 
         smry = {"message": "Integrity scan complete.", "files_in_baseline": len(
             self.baseline_data), "files_checked_from_baseline": cf-ec, "mismatches_found": mc, "new_files_detected": nfd, "scan_errors": ec, "timestamp": datetime.now().isoformat()}
-        print(smry)
+        logger.info(f"Integrity verification summary: {smry}")
         if is_scheduled_audit:
             self.signals.scheduledAuditCompleted.emit(df, smry)
         return df, smry
@@ -449,7 +495,7 @@ class FIMEngine(QObject):
             from core.user_profiler import user_profiler
             return user_profiler.generate_daily_risk_report()
         except ImportError:
-            print("ERROR: user_profiler module not found for risk assessment.")
+            logger.error("user_profiler module not found for risk assessment")
             return []
 
     # NEW METHOD for UBA integration: update_user_profiles
@@ -459,7 +505,7 @@ class FIMEngine(QObject):
             from core.user_profiler import user_profiler
             return user_profiler.save_profiles()
         except ImportError:
-            print("ERROR: user_profiler module not found for profile update.")
+            logger.error("user_profiler module not found for profile update")
             return False
 
 if __name__ == '__main__':

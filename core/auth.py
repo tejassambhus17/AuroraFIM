@@ -1,16 +1,22 @@
 # aurorafimpro/aurorafimpro/core/auth.py
+"""
+Authentication handler for AuroraFIM using bcrypt password hashing.
+"""
+
 import sqlite3
 import os
 import sys
-import json  # For logging details
+import bcrypt
 
-# Adjust path to import config and action_logger
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 try:
     import config
-    from core.action_logger import action_logger  # Import the global logger instance
+    from core.action_logger import action_logger
+    from core.logger import logger
+    from core.validators import validate_username, validate_password, validate_role
 except ImportError as e:
-    print(f"Error importing in core/auth.py: {e}")
+    raise ImportError(f"Critical error importing in core/auth.py: {e}")
     config = type('MockConfig', (), {
                   'BASE_DIR': '.', 'DATABASE_NAME': 'auth_fallback.db'})()
     # Mock action_logger if it fails to import, so auth can still function minimally
@@ -24,7 +30,7 @@ except ImportError as e:
 try:
     import bcrypt
 except ImportError:
-    print("WARNING: bcrypt module not found. Using INSECURE password stub for college demonstration.")
+    logger.warning("bcrypt module not found. Using INSECURE password stub for college demonstration.")
     
     # --- Mock Implementation ---
     MOCK_HASH_PREFIX = b'MOCK_INSECURE_HASH_'
@@ -80,19 +86,19 @@ class AuthHandler:
         try:
             return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
         except Exception as e:
-            print(f"Error during password verification: {e}")
+            logger.error(f"Password verification error: {e}")
             return False
 
     def create_user(self, username: str, password: str, role: str) -> bool:
         if role not in ['admin', 'auditor', 'viewer']:
-            print(f"Invalid role: {role}.")
+            logger.warning(f"Invalid role: {role}")
             action_logger.log_action(
                 action_type="USER_CREATE_ATTEMPT", username="System/Admin",
                 details={"target_user": username, "role": role, "error": "Invalid role"}, status="FAILURE"
             )
             return False
         if not os.path.exists(self.db_path):
-            print(f"DB {self.db_path} does not exist. Cannot create user.")
+            logger.error(f"Database does not exist: {self.db_path}")
             action_logger.log_action(
                 action_type="USER_CREATE_ATTEMPT", username="System/Admin",
                 details={"target_user": username, "error": "Database not found"}, status="FAILURE"
@@ -108,8 +114,7 @@ class AuthHandler:
                 (username, password_hash, role)
             )
             conn.commit()
-            print(
-                f"User '{username}' created successfully with role '{role}'.")
+            logger.info(f"User '{username}' created successfully with role '{role}'.")
             action_logger.log_action(
                 # Or by current admin user if UI exists
                 action_type="USER_CREATED", username="System/Admin",
@@ -117,14 +122,14 @@ class AuthHandler:
             )
             return True
         except sqlite3.IntegrityError:
-            print(f"Error: Username '{username}' already exists.")
+            logger.warning(f"Username already exists: {username}")
             action_logger.log_action(
                 action_type="USER_CREATE_ATTEMPT", username="System/Admin",
                 details={"target_user": username, "error": "Username exists"}, status="FAILURE"
             )
             return False
         except sqlite3.Error as e:
-            print(f"Database error during user creation: {e}")
+            logger.error(f"Database error during user creation: {e}")
             action_logger.log_action(
                 action_type="USER_CREATE_ATTEMPT", username="System/Admin",
                 details={"target_user": username, "error": str(e)}, status="FAILURE"
@@ -145,8 +150,7 @@ class AuthHandler:
         log_details = {"attempted_username": username}
 
         if user and self.verify_password(password, user['password_hash']):
-            print(
-                f"User '{username}' authenticated successfully. Role: {user['role']}")
+            logger.info(f"User '{username}' authenticated successfully. Role: {user['role']}")
             action_logger.log_action(
                 action_type="LOGIN_SUCCESS",
                 user_id=user['id'],
@@ -156,7 +160,7 @@ class AuthHandler:
             )
             return True, user['username'], user['role'], user['id']
 
-        print(f"Authentication failed for user '{username}'.")
+        logger.warning(f"Authentication failed for user '{username}'.")
         action_logger.log_action(
             action_type="LOGIN_FAILURE",
             username=username,  # Log attempted username even on failure
@@ -176,7 +180,7 @@ class AuthHandler:
             user_data = cursor.fetchone()
             return user_data
         except sqlite3.Error as e:
-            print(f"Database error while fetching user '{username}': {e}")
+            logger.error(f"Database error while fetching user '{username}': {e}")
             return None
         finally:
             if conn:
@@ -192,7 +196,7 @@ class AuthHandler:
             count = cursor.fetchone()[0]
             return count
         except sqlite3.Error as e:
-            print(f"Database error while getting user count: {e}")
+            logger.error(f"Database error while getting user count: {e}")
             return 0
         finally:
             if conn:

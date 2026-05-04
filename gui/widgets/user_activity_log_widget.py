@@ -10,52 +10,50 @@ import os
 import sys
 import json
 
-print(
-    f"DEBUG: user_activity_log_widget.py - Top of file, __name__ is {__name__} at {datetime.now()}")
+# Initialize logger for this widget
+try:
+    from core.logger import logger
+except ImportError:
+    class SimpleLogger:
+        def debug(self, msg): sys.stderr.write(f"DEBUG: {msg}\n")
+        def error(self, msg): sys.stderr.write(f"ERROR: {msg}\n")
+    logger = SimpleLogger()
 
 # Adjust import path for action_logger and config
 sys.path.append(os.path.abspath(os.path.join(
     os.path.dirname(__file__), '..', '..')))
 try:
-    print(
-        f"DEBUG: user_activity_log_widget.py - Attempting to import config at {datetime.now()}")
+    logger.debug("Attempting to import config")
     import config  # For APP_NAME, theming potentially
-    print(
-        f"DEBUG: user_activity_log_widget.py - Imported config successfully at {datetime.now()}")
+    logger.debug("Imported config successfully")
 
-    print(
-        f"DEBUG: user_activity_log_widget.py - Attempting to import action_logger at {datetime.now()}")
+    logger.debug("Attempting to import action_logger")
     from core.action_logger import action_logger  # Use the global instance
-    print(
-        f"DEBUG: user_activity_log_widget.py - Imported action_logger successfully at {datetime.now()}")
+    logger.debug("Imported action_logger successfully")
 
 except ImportError as e:
-    print(
-        f"CRITICAL DEBUG: Error importing modules in user_activity_log_widget.py: {e} at {datetime.now()}")
+    logger.error(f"Error importing modules in user_activity_log_widget.py: {e}")
     # Fallback mocks if direct execution or critical import failure
     if 'config' not in globals():  # Check if config failed specifically
         config = type('MockConfig', (), {
                       'APP_NAME': 'FIM Activity', 'MAX_EVENTS_IN_DASHBOARD': 100})()
-        print("DEBUG: user_activity_log_widget.py - Using MockConfig due to import error.")
+        logger.debug("Using MockConfig due to import error.")
     if 'action_logger' not in globals():  # Check if action_logger failed
         class MockActionLogger:
             def get_recent_actions(self, limit=100):
-                print(
-                    "DEBUG: user_activity_log_widget.py - MockActionLogger.get_recent_actions called")
+                logger.debug("MockActionLogger.get_recent_actions called")
                 return [{"activity_timestamp": datetime.now().timestamp(), "username": "MockUser", "action_type": "MOCK_ACTION", "status": "MOCK", "details": "{}"}]
         action_logger = MockActionLogger()
-        print("DEBUG: user_activity_log_widget.py - Using MockActionLogger due to import error.")
+        logger.debug("Using MockActionLogger due to import error.")
     # It's often better to re-raise if critical components for the class are missing
     # raise # Uncomment if these are absolutely critical for class definition itself
 
-print(
-    f"DEBUG: user_activity_log_widget.py - Helper imports successful. About to define UserActivityLogWidget class at {datetime.now()}")
+logger.debug("Helper imports successful. About to define UserActivityLogWidget class")
 
 
 class UserActivityLogWidget(QWidget):
     def __init__(self, parent=None):
-        print(
-            f"DEBUG: UserActivityLogWidget.__init__ called at {datetime.now()}")
+        logger.debug("UserActivityLogWidget.__init__ called")
         super().__init__(parent)
         self.setObjectName("UserActivityLogWidget")
         main_layout = QVBoxLayout(self)
@@ -98,21 +96,19 @@ class UserActivityLogWidget(QWidget):
 
         main_layout.addWidget(self.activity_table)
         self.load_activity_log()
-        print(
-            f"DEBUG: UserActivityLogWidget.__init__ finished at {datetime.now()}")
+        logger.debug("UserActivityLogWidget.__init__ finished")
 
     @Slot()
     def load_activity_log(self):
-        print(
-            f"DEBUG: UserActivityLogWidget.load_activity_log called at {datetime.now()}")
+        logger.debug("UserActivityLogWidget.load_activity_log called")
         if not action_logger:  # Should not happen if fallback is in place
-            print("CRITICAL DEBUG: action_logger is None in load_activity_log.")
+            logger.critical("action_logger is None in load_activity_log.")
             return
 
         log_entries = action_logger.get_recent_actions(
             limit=getattr(config, "MAX_EVENTS_IN_DASHBOARD", 100))
-        print(
-            f"DEBUG: UserActivityLogWidget - Fetched {len(log_entries)} activity log entries.")
+        logger.debug(
+            f"UserActivityLogWidget - Fetched {len(log_entries)} activity log entries.")
 
         self.activity_table.setSortingEnabled(False)
         self.activity_table.setRowCount(0)
@@ -159,16 +155,14 @@ class UserActivityLogWidget(QWidget):
 
         self.activity_table.setSortingEnabled(True)
         self.activity_table.resizeRowsToContents()
-        print(
-            f"DEBUG: UserActivityLogWidget - Table populated. Row count: {self.activity_table.rowCount()}")
+        logger.debug(
+            f"UserActivityLogWidget - Table populated. Row count: {self.activity_table.rowCount()}")
 
 
-print(
-    f"DEBUG: user_activity_log_widget.py - UserActivityLogWidget class has been defined (or definition block passed) at {datetime.now()}")
+logger.debug("UserActivityLogWidget class has been defined")
 
 if __name__ == '__main__':
-    print(
-        f"DEBUG: user_activity_log_widget.py running as __main__ at {datetime.now()}")
+    logger.debug("user_activity_log_widget.py running as __main__")
     # Import QApplication for direct test
     from PySide6.QtWidgets import QApplication
     app = QApplication(sys.argv)
@@ -178,7 +172,7 @@ if __name__ == '__main__':
 
     class MockActionLoggerForTest:
         def get_recent_actions(self, limit=100):
-            print("DEBUG: MockActionLoggerForTest.get_recent_actions called")
+            logger.debug("MockActionLoggerForTest.get_recent_actions called")
             return [
                 {"activity_timestamp": datetime.now().timestamp() - 60, "username": "admin",
                  "action_type": "LOGIN_SUCCESS", "status": "SUCCESS", "details": json.dumps({"role": "admin"})},
@@ -196,5 +190,4 @@ if __name__ == '__main__':
     action_logger = _original_action_logger  # Restore
     sys.exit(exit_code)
 
-print(
-    f"DEBUG: user_activity_log_widget.py - End of file reached at {datetime.now()}")
+logger.debug("user_activity_log_widget.py - End of file reached")

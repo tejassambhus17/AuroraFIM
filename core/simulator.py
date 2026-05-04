@@ -7,13 +7,23 @@ from PySide6.QtCore import QObject, Signal
 # Adjust path to import core/fim and core/auth
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Initialize logger
+try:
+    from core.logger import logger
+except ImportError:
+    class SimpleLogger:
+        def error(self, msg): sys.stderr.write(f"ERROR: {msg}\n")
+        def info(self, msg): pass
+    logger = SimpleLogger()
+
 try:
     from core.fim import FIMEngine
     from core.auth import AuthHandler
     from core.action_logger import action_logger
     from core.user_profiler import user_profiler # NEW: Import global profiler instance
 except ImportError as e:
-    print(f"Error importing modules in core/simulator.py: {e}")
+    logger.error(f"Error importing modules in core/simulator.py: {e}")
     FIMEngine = None
     AuthHandler = None
     # Mock logger to prevent errors if running standalone
@@ -53,7 +63,7 @@ class Simulator:
                 )
                 return True
         
-        print(f"ERROR: Could not ensure simulation user {self.target_username} exists.")
+        logger.error(f"Could not ensure simulation user {self.target_username} exists.")
         return False
 
     def run_anomaly_scenario(self) -> str:

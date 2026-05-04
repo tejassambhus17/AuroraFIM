@@ -1,6 +1,16 @@
 # aurorafimpro/aurorafimpro/config.py
 import os
 import json
+import sys
+
+# Initialize logger for config module (used during early initialization)
+try:
+    from core.logger import logger
+except ImportError:
+    class SimpleLogger:
+        def warning(self, msg): sys.stderr.write(f"WARNING: {msg}\n")
+        def info(self, msg): pass
+    logger = SimpleLogger()
 
 # --- Application Settings ---
 APP_NAME = "AuroraFIM Pro"
@@ -12,45 +22,45 @@ DEFAULT_UI_MODE = "dark"  # Make dark mode the default
 
 # Modern Dark Theme Palette
 DARK_THEME_PALETTE = {
-    "window": "#2b2b2b",                   # Dark grey, almost black
-    "windowText": "#e0e0e0",               # Light grey for text
-    "base": "#1e1e1e",                     # Very dark grey for input fields, tables
-    "alternateBase": "#333333",           # Slightly lighter grey for alternating rows
-    "toolTipBase": "#3c3c3c",
-    "toolTipText": "#e0e0e0",
-    "text": "#d0d0d0",                     # Main text color
-    "button": "#3c3f41",                   # Darker button color
-    "buttonText": "#e0e0e0",               # Text on buttons
+    "window": "#0B1220",
+    "windowText": "#E6EDF7",
+    "base": "#111C2E",
+    "alternateBase": "#1A2940",
+    "toolTipBase": "#111C2E",
+    "toolTipText": "#E6EDF7",
+    "text": "#E6EDF7",
+    "button": "#1A2940",
+    "buttonText": "#E6EDF7",
     "brightText": "#ff4757",               # Bright red for critical alerts/text
-    "highlight": "#007acc",                # A modern blue for highlights/selection
+    "highlight": "#1D9BF0",
     "highlightedText": "#ffffff",           # Text on highlighted items
-    "disabledText": "#777777",
-    "disabledButtonText": "#777777",
-    "disabledWindowText": "#777777",
-    "accent": "#00aeff",                   # A vibrant light blue for accents
-    "borderColor": "#4a4a4a",              # Borders for frames, inputs
-    "tableHeaderBg": "#383838",            # Header for tables
-    "tableGrid": "#404040",                # Grid lines in tables
-    "disabledButtonBackground": "#2c2c2c",
-    "disabledBorderColor": "#3a3a3a",
-    "statusBarBg": "#232323",              # Slightly different for status bar
-    "menuBarBg": "#282828",                # For potential future QMenuBar
-    "successGreen": "#2ecc71",             # Green for "SECURE" badge
+    "disabledText": "#7A8AA5",
+    "disabledButtonText": "#7A8AA5",
+    "disabledWindowText": "#7A8AA5",
+    "accent": "#49B3F5",
+    "borderColor": "#233651",
+    "tableHeaderBg": "#1A2940",
+    "tableGrid": "#2C4362",
+    "disabledButtonBackground": "#15233A",
+    "disabledBorderColor": "#233651",
+    "statusBarBg": "#111C2E",
+    "menuBarBg": "#111C2E",
+    "successGreen": "#22C55E",
     "warningOrange": "#f39c12",            # Orange for "VERIFYING" or warnings
     "dangerRed": "#e74c3c",                # Red for "COMPROMISED" badge
-    "unknownGrey": "#7f8c8d"               # Grey for "UNKNOWN" badge
+    "unknownGrey": "#8090AA"
 }
 
 # Light Theme Palette (can also be refined if needed)
 LIGHT_THEME_PALETTE = {
-    "window": "#f0f0f0", "windowText": "#000000", "base": "#ffffff", "alternateBase": "#f5f5f5",
-    "toolTipBase": "#ffffe0", "toolTipText": "#000000", "text": "#000000", "button": "#e0e0e0",
-    "buttonText": "#000000", "brightText": "#ff0000", "highlight": "#308cc6", "highlightedText": "#ffffff",
-    "disabledText": "#a0a0a0", "disabledButtonText": "#a0a0a0", "disabledWindowText": "#a0a0a0",
-    "accent": "#0078d7", "borderColor": "#c0c0c0", "tableHeaderBg": "#e8e8e8", "tableGrid": "#d0d0d0",
-    "disabledButtonBackground": "#d0d0d0", "disabledBorderColor": "#b0b0b0",
-    "statusBarBg": "#e0e0e0", "menuBarBg": "#f0f0f0",
-    "successGreen": "#27ae60", "warningOrange": "#e67e22", "dangerRed": "#c0392b", "unknownGrey": "#95a5a6"
+    "window": "#F3F6FB", "windowText": "#0F172A", "base": "#FFFFFF", "alternateBase": "#EAF0F8",
+    "toolTipBase": "#FFFFFF", "toolTipText": "#0F172A", "text": "#0F172A", "button": "#EAF0F8",
+    "buttonText": "#0F172A", "brightText": "#DC2626", "highlight": "#0F6CBD", "highlightedText": "#FFFFFF",
+    "disabledText": "#8FA1BA", "disabledButtonText": "#8FA1BA", "disabledWindowText": "#8FA1BA",
+    "accent": "#1D87E0", "borderColor": "#D5E0EE", "tableHeaderBg": "#EAF0F8", "tableGrid": "#C0D0E5",
+    "disabledButtonBackground": "#E3EAF5", "disabledBorderColor": "#CFDCEC",
+    "statusBarBg": "#FFFFFF", "menuBarBg": "#FFFFFF",
+    "successGreen": "#15803D", "warningOrange": "#B45309", "dangerRed": "#B91C1C", "unknownGrey": "#64748B"
 }
 
 # --- Enhanced QSS Templates ---
@@ -233,7 +243,7 @@ def load_app_settings() -> dict:
             with open(APP_SETTINGS_FILE, 'r') as f:
                 return json.load(f)
         except Exception as e:
-            print(f"Error loading app settings: {e}. Using defaults.")
+            logger.warning(f"Error loading app settings: {e}. Using defaults.")
     return {}
 
 
@@ -242,7 +252,7 @@ def save_app_settings(settings_dict: dict):
         with open(APP_SETTINGS_FILE, 'w') as f:
             json.dump(settings_dict, f, indent=4)
     except Exception as e:
-        print(f"Error saving app settings: {e}")
+        logger.warning(f"Error saving app settings: {e}")
 
 
 _app_settings = load_app_settings()
@@ -301,7 +311,7 @@ def update_monitored_directories(new_paths: list[str]):
     MONITORED_DIRECTORIES = normalized_paths
     _app_settings["monitored_directories"] = MONITORED_DIRECTORIES
     save_app_settings(_app_settings)
-    print(f"Config: Monitored directories updated: {MONITORED_DIRECTORIES}")
+    logger.info(f"Monitored directories updated: {MONITORED_DIRECTORIES}")
 
 
 def update_audit_schedule_time(new_time_str: str):
@@ -312,13 +322,13 @@ def update_audit_schedule_time(new_time_str: str):
             DEFAULT_AUDIT_SCHEDULE_TIME = new_time_str
             _app_settings["default_audit_schedule_time"] = new_time_str
             save_app_settings(_app_settings)
-            print(
-                f"Config: Audit schedule updated to {DEFAULT_AUDIT_SCHEDULE_TIME}")
+            logger.info(
+                f"Audit schedule updated to {DEFAULT_AUDIT_SCHEDULE_TIME}")
             return True
         else:
-            print(f"Config Error: Invalid time: {new_time_str}")
+            logger.warning(f"Invalid time: {new_time_str}")
             return False
     except ValueError:
-        print(
-            f"Config Error: Invalid time format: {new_time_str}. Expected HH:MM.")
+        logger.warning(
+            f"Invalid time format: {new_time_str}. Expected HH:MM.")
         return False

@@ -9,11 +9,21 @@ from collections import defaultdict
 # --- Mock imports for isolated execution/dependencies ---
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Initialize logger
+try:
+    from core.logger import logger
+except ImportError:
+    class SimpleLogger:
+        def error(self, msg): sys.stderr.write(f"ERROR: {msg}\n")
+        def info(self, msg): pass
+    logger = SimpleLogger()
+
 try:
     import config
     from core.action_logger import ActionLogger
 except ImportError as e:
-    print(f"Error importing config/ActionLogger in user_profiler.py: {e}")
+    logger.error(f"Error importing config/ActionLogger in user_profiler.py: {e}")
     class MockConfig:
         BASE_DIR = "."
         DATABASE_NAME = "mock_uba.db"
@@ -42,7 +52,7 @@ class UserProfiler:
             conn.row_factory = sqlite3.Row
             return conn
         except sqlite3.Error as e:
-            print(f"UserProfiler: Database connection error to {self.db_path}: {e}")
+            logger.error(f"UserProfiler: Database connection error to {self.db_path}: {e}")
             return None
 
     def _get_user_base_stats(self, conn: sqlite3.Connection):
@@ -159,10 +169,10 @@ class UserProfiler:
                 """, (user_id, username, json.dumps(profile_data)))
             
             conn.commit()
-            print(f"User profiles updated for {len(profiles)} users.")
+            logger.info(f"User profiles updated for {len(profiles)} users.")
             return True
         except sqlite3.Error as e:
-            print(f"Error saving user profiles: {e}")
+            logger.error(f"Error saving user profiles: {e}")
             return False
         finally:
             if conn:
@@ -182,7 +192,7 @@ class UserProfiler:
                 return json.loads(row['profile_data_json'])
             return None
         except sqlite3.Error as e:
-            print(f"Error loading profile for user_id {user_id}: {e}")
+            logger.error(f"Error loading profile for user_id {user_id}: {e}")
             return None
         finally:
             if conn:
@@ -315,7 +325,7 @@ class UserProfiler:
             return self.risk_report
             
         except sqlite3.Error as e:
-            print(f"Error generating daily risk report: {e}")
+            logger.error(f"Error generating daily risk report: {e}")
             return []
         finally:
             if conn:
@@ -342,7 +352,7 @@ class UserProfiler:
                 })
             return profiles
         except sqlite3.Error as e:
-            print(f"Error retrieving user profiles: {e}")
+            logger.error(f"Error retrieving user profiles: {e}")
             return []
         finally:
             if conn:

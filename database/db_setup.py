@@ -5,10 +5,21 @@ import sys
 
 # Adjust path to import config from the parent 'aurorafimpro' package directory
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Initialize logger for db_setup
+try:
+    from core.logger import logger
+except ImportError:
+    class SimpleLogger:
+        def info(self, msg): print(f"INFO: {msg}")
+        def error(self, msg): print(f"ERROR: {msg}")
+        def warning(self, msg): print(f"WARNING: {msg}")
+    logger = SimpleLogger()
+
 try:
     import config
 except ImportError as e:
-    print(f"Error importing config in db_setup.py: {e}")
+    logger.error(f"Error importing config in db_setup.py: {e}")
 
     class MockConfig:
         BASE_DIR = "."
@@ -34,9 +45,9 @@ def initialize_database():
     if not os.path.exists(db_dir):
         try:
             os.makedirs(db_dir, exist_ok=True)
-            print(f"Created database directory: {db_dir}")
+            logger.info(f"Created database directory: {db_dir}")
         except OSError as e:
-            print(f"Error creating database directory {db_dir}: {e}")
+            logger.error(f"Error creating database directory {db_dir}: {e}")
             return
 
     conn = None
@@ -54,7 +65,7 @@ def initialize_database():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
-        print("Users table checked/created successfully.")
+        logger.info("Users table checked/created successfully.")
 
         # --- FIM Events Table ---
         # Note: Added user_id to this table in FIMEngine for UBA tracking
@@ -79,7 +90,7 @@ def initialize_database():
             "CREATE INDEX IF NOT EXISTS idx_fim_events_timestamp ON fim_events (event_timestamp DESC)")
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_fim_events_file_path ON fim_events (file_path)")
-        print("FIM Events table checked/created successfully with indexes.")
+        logger.info("FIM Events table checked/created successfully with indexes.")
 
         # --- User Activity Log Table ---
         cursor.execute("""
@@ -102,7 +113,7 @@ def initialize_database():
             "CREATE INDEX IF NOT EXISTS idx_user_activity_log_user ON user_activity_log (user_id, username)")
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_user_activity_log_action ON user_activity_log (action_type)")
-        print("User Activity Log table checked/created successfully with indexes.")
+        logger.info("User Activity Log table checked/created successfully with indexes.")
         
         # --- UBA User Profiles Table (NEW) ---
         cursor.execute("""
@@ -114,21 +125,21 @@ def initialize_database():
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
         """)
-        print("User Profiles table checked/created successfully.")
+        logger.info("User Profiles table checked/created successfully.")
 
         conn.commit()
-        print(f"Database '{DATABASE_FILE}' initialized successfully.")
+        logger.info(f"Database '{DATABASE_FILE}' initialized successfully.")
 
     except sqlite3.Error as e:
-        print(f"Database error during initialization: {e}")
+        logger.error(f"Database error during initialization: {e}")
     finally:
         if conn:
             conn.close()
 
 
 if __name__ == '__main__':
-    print(f"Attempting to initialize database at: {DATABASE_FILE}")
-    print(f"Configured BASE_DIR from config.py: {config.BASE_DIR}")
+    logger.info(f"Attempting to initialize database at: {DATABASE_FILE}")
+    logger.info(f"Configured BASE_DIR from config.py: {config.BASE_DIR}")
     if not os.path.exists(config.BASE_DIR):
-        print(f"Warning: BASE_DIR '{config.BASE_DIR}' does not exist.")
+        logger.warning(f"BASE_DIR '{config.BASE_DIR}' does not exist.")
     initialize_database()

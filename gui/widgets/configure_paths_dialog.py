@@ -14,8 +14,15 @@ sys.path.append(os.path.abspath(os.path.join(
     os.path.dirname(__file__), '..', '..')))
 try:
     import config  # For APP_NAME
+    from core.logger import logger
 except ImportError:
     config = type('MockConfig', (), {'APP_NAME': 'FIM'})()
+    class SimpleLogger:
+        def info(self, msg): pass
+        def warning(self, msg): pass
+        def error(self, msg): pass
+        def debug(self, msg): pass
+    logger = SimpleLogger()
 
 
 class ConfigurePathsDialog(QDialog):
@@ -156,9 +163,9 @@ if __name__ == '__main__':
     dialog = ConfigurePathsDialog(current_paths=initial_paths)
     if dialog.exec() == QDialog.Accepted:  # Use QDialog.Accepted for standard dialogs
         new_paths = dialog.get_updated_paths()
-        print("Paths saved:")
+        logger.info("Paths saved:")
         for path in new_paths:
-            print(f"- {path}")
+            logger.info(f"- {path}")
     else:
-        print("Configuration cancelled.")
+        logger.info("Configuration cancelled.")
     # sys.exit() # Not needed if app.exec() is not called for this simple test

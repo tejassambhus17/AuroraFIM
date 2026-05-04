@@ -38,10 +38,20 @@ AuroraFIM continuously monitors file system activity and user behavior to identi
 - Persistent logging and reporting
 
 ---
-
 ## 🏗️ Project Structure
-
-bash AuroraFIM/ │ ├── core/                # Core logic and processing │   ├── auth.py │   ├── db_pool.py │   ├── fim.py │   ├── hashing.py │   ├── logger.py │   ├── metrics_api.py │   ├── performance_monitor.py │   ├── reporting.py │   ├── simulator.py │   ├── user_profiler.py │   └── validators.py │ ├── gui/                 # GUI components (PySide6) │   ├── main_window.py │   ├── modern_components.py │   ├── modern_style.py │   └── widgets/ │ ├── database/            # Database setup and management │   └── db_setup.py │ ├── config.py            # Configuration settings ├── main.py              # Entry point ├── tests.py             # Testing utilities ├── .gitignore └── README.md 
+FIM/
+├── aurorafimpro/
+│   ├── core/          # Authentication, hashing, monitoring, reporting, logging
+│   ├── database/      # SQLite setup and initialization
+│   ├── gui/           # Main window, dialogs, widgets, styles
+│   ├── main.py        # Application entry point
+│   └── config.py      # App configuration and theme settings
+├── audit_reports/     # Generated PDF reports
+├── baseline.json      # Baseline integrity data
+├── baseline.sig       # Baseline signature
+├── file_snapshots/    # Snapshot data used by the monitor
+├── logs/              # Runtime logs
+└── requirements.txt   # Python dependencies
 
 ---
 
